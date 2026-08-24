@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NetGuard — network flow scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body data-models-ready="{{ 'true' if models_ready else 'false' }}">
+
+  <div class="shell">
+    <div class="topbar">
+      <div class="wordmark">
+        <span class="mark"></span>
+        <span class="name">NetGuard</span>
+      </div>
+      <div class="topbar-meta">
+        <span class="status live"><span class="dot"></span><span class="status-label">isolation-forest + random-forest + meta-lr</span></span>
+      </div>
+    </div>
+
+    <!-- ============================= IDLE / UPLOAD ============================= -->
+    <div id="view-idle" class="view">
+      <div class="case-meta">NETGUARD · <b>NEW SCAN</b></div>
+      <h1 class="headline">Scan network flows</h1>
+      <p class="subline">Drop a CSV of network flow data. If it has a label column, NetGuard splits it into
+        train / validation / test, trains on the training fold only, and reports metrics from flows the model
+        has never seen. Unlabeled files run in detection-only mode.</p>
+
+      <div id="dropzone" class="dropzone">
+        <div class="glyph">▁▂▃▅▇▅▃▂▁</div>
+        <div class="title">Drop a CSV here</div>
+        <div class="hint">or click to browse — .csv only</div>
+        <button class="btn primary" type="button" id="scan-btn" disabled>Run scan</button>
+        <div class="dz-filename mono" id="dz-filename"></div>
+        <input type="file" id="file-input" accept=".csv">
+      </div>
+      <div class="top-n-row">
+        keep top
+        <input type="number" id="top-n" value="15" min="4" max="40">
+        features
+      </div>
+    </div>
+
+    <!-- ============================= RUNNING ============================= -->
+    <div id="view-running" class="view hidden">
+      <div class="case-meta">NETGUARD · <b>SCAN IN PROGRESS</b></div>
+      <h1 class="headline">Running the pipeline</h1>
+      <p class="subline">Preprocessing, feature selection, model training, and held-out detection — in order.</p>
+
+      <div class="run-panel">
+        <div class="run-steps">
+          <div class="run-step"><div class="fill"></div></div>
+          <div class="run-step"><div class="fill"></div></div>
+          <div class="run-step"><div class="fill"></div></div>
+          <div class="run-step"><div class="fill"></div></div>
+          <div class="run-step"><div class="fill"></div></div>
+        </div>
+        <div id="run-log" class="run-log"></div>
+      </div>
+    </div>
+
+    <!-- ============================= ERROR ============================= -->
+    <div id="view-error" class="view hidden">
+      <div class="case-meta">NETGUARD · <b>SCAN FAILED</b></div>
+      <h1 class="headline">The pipeline hit an error</h1>
+      <div class="error-panel">
+        <div id="error-msg"></div>
+        <pre id="error-trace"></pre>
+      </div>
+      <div style="margin-top:18px;"><button class="btn" id="retry-btn">Start over</button></div>
+    </div>
+
+    <!-- ============================= RESULT ============================= -->
+    <div id="view-result" class="view hidden">
+      <div class="case-meta">NETGUARD · CASE #<span id="case-id" class="mono"></span> · <span id="case-time"></span></div>
+      <h1 class="headline">Security report</h1>
+      <p class="subline">Anomaly-score distribution for this scan — normal flows in green, flagged flows in red.
+        The dashed line marks the decision threshold, frozen from validation data before any test flow was scored.</p>
+
+      <div class="waveform-wrap">
+        <div class="waveform-head">
+          <span class="waveform-title u">score distribution</span>
+          <span class="waveform-legend">
+            <span class="ok"><i></i>normal</span>
+            <span class="bad"><i></i>flagged</span>
+          </span>
+        </div>
+        <div id="waveform-holder"></div>
+        <div class="waveform-caption">Each trace is scaled to its own peak — this compares score <em>shape</em>, not the raw count of normal vs. flagged flows.</div>
+      </div>
+
+      <div class="ledger-strip">
+        <div class="ledger-stat"><div class="num" id="stat-total">—</div><div class="lbl u">ingested</div></div>
+        <div class="ledger-stat"><div class="num" id="stat-train">—</div><div class="lbl u">trained on</div></div>
+        <div class="ledger-stat"><div class="num" id="stat-tested">—</div><div class="lbl u">held-out tested</div></div>
+        <div class="ledger-stat"><div class="num" id="stat-flagged">—</div><div class="lbl u">flagged</div></div>
+      </div>
+
+      <div id="trust-line" class="trust-line"></div>
+
+      <div class="grid-main">
+        <div class="col-left">
+          <div class="panel" id="perf-panel-wrap">
+            <div class="panel-title">DETECTOR PERFORMANCE</div>
+            <div id="perf-panel"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">TOP SIGNALS</div>
+            <div id="feature-panel" class="feature-list"></div>
+          </div>
+          <div id="charts"></div>
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <button class="btn small" id="new-scan-btn">New scan</button>
+            <button class="btn small" id="download-btn">Download CSV</button>
+          </div>
+        </div>
+
+        <div class="col-right">
+          <div class="ledger-panel">
+            <div class="ledger-toolbar">
+              <h2>Flow ledger</h2>
+              <div class="ledger-controls">
+                <input type="text" id="ledger-search" class="search-input" placeholder="search attack type…">
+                <div class="chip-group">
+                  <button class="chip active" data-filter="all">All</button>
+                  <button class="chip" data-filter="normal">Normal</button>
+                  <button class="chip" data-filter="suspicious">Suspicious</button>
+                  <button class="chip" data-filter="disagreement">Disagreement</button>
+                </div>
+              </div>
+            </div>
+            <div class="ledger-table-scroll">
+              <table class="ledger">
+                <thead id="ledger-head">
+                  <tr>
+                    <th>#</th><th>Verdict</th><th>Type</th><th>Confidence</th>
+                    <th>Agreement</th><th>Isolation Forest</th><th>Random Forest</th>
+                    <th class="actual-col">Ground truth</th>
+                  </tr>
+                </thead>
+                <tbody id="ledger-body"></tbody>
+              </table>
+            </div>
+            <div class="ledger-foot">
+              <span id="ledger-count"></span>
+              <div class="pager">
+                <button class="btn-page" id="prev-page">← Prev</button>
+                <button class="btn-page" id="next-page">Next →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================= LIVE CAPTURE ============================= -->
+    <div class="capture-panel">
+      <div class="capture-head" id="capture-head" style="cursor:pointer;">
+        <div>
+          <h2>Live network capture</h2>
+          <div class="hint" id="capture-hint">Requires admin/root. Scores live traffic against the last trained models.</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn small primary" id="capture-start">Start</button>
+          <button class="btn small" id="capture-stop" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="capture-body" id="capture-body">
+        <div class="capture-feed" id="capture-feed">
+          <div class="capture-empty">No live flows yet. Start a capture to see traffic scored in real time.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
