@@ -16,6 +16,11 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 ensure_dirs()
 
+# Render (and most PaaS containers) don't grant raw-socket access, and there's no
+# meaningful live network traffic to sniff on a cloud box anyway — live capture is a
+# local-machine feature only. RENDER is set automatically in Render's environment.
+IS_CLOUD = os.environ.get("RENDER") is not None or os.environ.get("NETGUARD_DISABLE_CAPTURE") == "1"
+
 _state = {
     "phase": "idle" if not models_exist() else "ready",
     "step": 0, "step_msg": "", "error": None, "result": None, "log": [],
@@ -89,7 +94,7 @@ def _run_pipeline(filepath, top_n=15):
 
 @app.route("/")
 def index():
-    return render_template("index.html", models_ready=models_exist())
+    return render_template("index.html", models_ready=models_exist(), capture_available=not IS_CLOUD)
 
 
 @app.route("/scan", methods=["POST"])
@@ -182,6 +187,8 @@ _capture_running = False
 @app.route("/start_capture", methods=["POST"])
 def start_capture():
     global _capture_running
+    if IS_CLOUD:
+        return jsonify({"error": "Live capture isn't available on this deployment — it needs direct access to a local network interface."}), 400
     if _capture_running:
         return jsonify({"status": "already running"})
     if not models_exist():
@@ -200,11 +207,14 @@ def stop_capture():
 
 
 if __name__ == "__main__":
+    # Render (and most PaaS hosts) inject $PORT and expect the app to bind to it —
+    # 5000 is only the local-dev fallback.
+    port = int(os.environ.get("PORT", 5000))
     print("\n" + "=" * 50)
     print("  NetGuard IDS v3.0 — Zero-Day Threat Scanner")
-    print("  Open:  http://localhost:5000")
+    print(f"  Open:  http://localhost:{port}")
     print("=" * 50 + "\n")
-    # allow_unsafe_werkzeug: this app is a local single-user dev tool run via `python app.py`
-    # or run.bat, never a production deployment — newer flask-socketio blocks the dev server
-    # by default unless this is set explicitly.
-    socketio.run(app, debug=False, port=5000, allow_unsafe_werkzeug=True)
+    # allow_unsafe_werkzeug: acceptable here because this is a small single-worker
+    # deployment (Render free/hobby tier, or local use) — not a high-traffic service.
+    # For heavier production use, swap to gunicorn with an eventlet/gevent worker.
+    socketio.run(app, debug=False, host="0.0.0.0", port=port, allow_unsafe_werkzeug=True)
