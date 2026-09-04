@@ -222,13 +222,23 @@ def train_models(progress_cb=None):
     log(f"Training on {len(X_normal):,} normal + {int((y_all==1).sum()):,} attack samples (train fold only)")
 
     log("Training Isolation Forest...")
-    iso = IsolationForest(n_estimators=500, contamination=0.1, max_samples=0.8, random_state=42, n_jobs=-1)
+    # max_samples: Isolation Forest doesn't need huge per-tree samples to work — its whole
+    # mechanism relies on random partitioning isolating outliers in *few* splits, which
+    # happens reliably even with small subsamples. The original paper's own recommended
+    # default is 256 samples per tree. The previous max_samples=0.8 meant building 500 trees
+    # each from ~80% of the full dataset — fine on a local machine, but heavy enough to stall
+    # or get OOM-killed on a memory-constrained free-tier host. 256 is faster and, per the
+    # Isolation Forest paper, typically detects anomalies just as well or better.
+    iso = IsolationForest(n_estimators=150, contamination=0.1, max_samples=256, random_state=42, n_jobs=-1)
     iso.fit(X_normal)
     save_obj(iso, ISO_PATH)
 
     if (y_all == 1).sum() > 0:
         log("Training Random Forest classifier...")
-        rf = RandomForestClassifier(n_estimators=300, max_depth=20, class_weight="balanced", random_state=42, n_jobs=-1)
+        # Trimmed from 300 trees / depth 20 — very deep trees over ~78 features and 200k+ rows
+        # multiply memory fast. 150 trees at depth 14 trains noticeably lighter with only a
+        # small, usually negligible, accuracy cost for this kind of tabular flow data.
+        rf = RandomForestClassifier(n_estimators=150, max_depth=14, class_weight="balanced", random_state=42, n_jobs=-1)
         rf.fit(X_all, y_multi)
         save_obj(rf, RF_PATH)
         log("Random Forest (multiclass) saved")
