@@ -1,0 +1,42 @@
+{
+  "dataset": "Botnet-Friday-no-metadata.csv",
+  "rows": {
+    "train": 105622,
+    "val": 35208,
+    "test": 35208
+  },
+  "headline": {
+    "metric": "attack-class F1 (test)",
+    "value": 0.9067,
+    "ci95": [
+      0.8799,
+      0.9305
+    ]
+  },
+  "confusion_matrix": {
+    "tn": 34921,
+    "fp": 0,
+    "fn": 49,
+    "tp": 238
+  },
+  "auc": 0.9891,
+  "features_used": [
+    "Bwd IAT Mean",
+    "Flow Duration",
+    "Fwd Packet Length Max",
+    "Bwd Packets/s",
+    "Bwd Packet Length Max",
+    "Flow IAT Max",
+    "Bwd Packet Length Mean",
+    "Bwd Packet Length Std",
+    "Flow IAT Std",
+    "Bwd IAT Max",
+    "Flow IAT Mean",
+    "Fwd Packet Length Mean",
+    "Flow Packets/s",
+    "Fwd Packets Length Total",
+    "PSH Flag Count"
+  ],
+  "suspicious_result": true,
+  "split": "stratified 60/20/20, seed 42; scaler/selection/models fit on train, fusion on val, metrics on test"
+}

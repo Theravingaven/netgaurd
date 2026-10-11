@@ -10,6 +10,8 @@ from utils import ensure_dirs, models_exist, DATA, RESULTS_PATH
 import pipeline
 
 app = Flask(__name__)
+from predict_api import bp as predict_bp
+app.register_blueprint(predict_bp)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 app.config["SECRET_KEY"] = "netguard-secret"
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
