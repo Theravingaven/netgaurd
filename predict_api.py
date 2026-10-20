@@ -97,10 +97,14 @@ def health():
 
 @bp.route("/metrics")
 def metrics():
-    p = os.path.join(REPORTS, "metrics.json")
-    if not os.path.exists(p):
+    rp = os.path.join(REPORTS, "metrics.json"); cp = os.path.join(REPORTS, "metrics_chrono.json")
+    if not os.path.exists(rp):
         return jsonify({"error": "Run train.py first"}), 404
-    return jsonify(json.load(open(p)))
+    r = json.load(open(rp))
+    if os.path.exists(cp):          # prefer the stricter time-ordered result as the headline
+        c = json.load(open(cp)); c["random_split"] = r["headline"]
+        return jsonify(c)
+    return jsonify(r)
 
 @bp.route("/predict", methods=["POST"])
 def predict():

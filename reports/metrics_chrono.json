@@ -1,0 +1,42 @@
+{
+  "dataset": "Portscan-Friday-no-metadata.csv",
+  "rows": {
+    "train": 71713,
+    "val": 23904,
+    "test": 23905
+  },
+  "headline": {
+    "metric": "attack-class F1 (test)",
+    "value": 0.8834,
+    "ci95": [
+      0.8546,
+      0.91
+    ]
+  },
+  "confusion_matrix": {
+    "tn": 23565,
+    "fp": 2,
+    "fn": 69,
+    "tp": 269
+  },
+  "auc": 0.9601,
+  "features_used": [
+    "Flow Duration",
+    "Fwd Packet Length Min",
+    "PSH Flag Count",
+    "Bwd Packets/s",
+    "Packet Length Variance",
+    "Init Fwd Win Bytes",
+    "Flow IAT Max",
+    "Flow Packets/s",
+    "Packet Length Mean",
+    "Flow IAT Mean",
+    "ACK Flag Count",
+    "Flow Bytes/s",
+    "Fwd IAT Std",
+    "Fwd Packet Length Mean",
+    "Bwd Packet Length Std"
+  ],
+  "suspicious_result": false,
+  "split": "chronological 60/20/20 in file order; scaler/selection/models fit on train, fusion and threshold on val, metrics on test"
+}

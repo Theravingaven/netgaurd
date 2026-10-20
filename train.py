@@ -51,22 +51,27 @@ def load_clean(path):
             df[c] = pd.Categorical(df[c]).codes
     return df
 
-def main(path, top_n):
+def main(path, top_n, chrono=False):
+    sfx = '_chrono' if chrono else ''
     ensure_dirs()
     df = load_clean(path)
     feat_cols = [c for c in df.columns if c not in ("label", "attack_type")]
 
     # 1. split FIRST (stratified on attack type)
-    strat = df["attack_type"]
-    train, tmp = train_test_split(df, test_size=0.4, stratify=strat, random_state=SEED)
-    val, test = train_test_split(tmp, test_size=0.5, stratify=tmp["attack_type"], random_state=SEED)
+    if chrono:   # file order ~ time order: train on earliest 60%, tune on next 20%, test on latest 20%
+        n_ = len(df); a_, b_ = int(n_ * .6), int(n_ * .8)
+        train, val, test = df.iloc[:a_].copy(), df.iloc[a_:b_].copy(), df.iloc[b_:].copy()
+    else:
+        strat = df["attack_type"]
+        train, tmp = train_test_split(df, test_size=0.4, stratify=strat, random_state=SEED)
+        val, test = train_test_split(tmp, test_size=0.5, stratify=tmp["attack_type"], random_state=SEED)
 
     # 2. impute + scale with TRAIN statistics only
     med = train[feat_cols].median()
     for part in (train, val, test):
         part[feat_cols] = part[feat_cols].fillna(med)
     scaler = StandardScaler().fit(train[feat_cols])
-    save_obj(scaler, SCALER_PATH)
+    if not chrono: save_obj(scaler, SCALER_PATH)
     tr = pd.DataFrame(scaler.transform(train[feat_cols]), columns=feat_cols, index=train.index)
     va = pd.DataFrame(scaler.transform(val[feat_cols]),   columns=feat_cols, index=val.index)
     te = pd.DataFrame(scaler.transform(test[feat_cols]),  columns=feat_cols, index=test.index)
@@ -88,7 +93,7 @@ def main(path, top_n):
     rf = RandomForestClassifier(n_estimators=300, max_depth=20, class_weight="balanced",
                                 random_state=SEED, n_jobs=-1)
     rf.fit(tr[top], train["attack_type"])
-    save_obj(iso, ISO_PATH); save_obj(rf, RF_PATH)
+    if not chrono: save_obj(iso, ISO_PATH); save_obj(rf, RF_PATH)
 
     # 5. fusion meta-learner fit on VALIDATION only
     classes = list(rf.classes_)
@@ -104,11 +109,11 @@ def main(path, top_n):
     # decision threshold chosen on VALIDATION only (max F1), never on test
     pv, rv, tv = precision_recall_curve(val["label"], meta.predict_proba(meta_X(va[top]))[:, 1])
     f1v = 2 * pv[:-1] * rv[:-1] / (pv[:-1] + rv[:-1] + 1e-9)
-    thr = float(tv[int(np.argmax(f1v))]) if len(tv) else 0.5
+    thr = float(tv[int(np.argmax(f1v))]) if len(tv) and val["label"].sum() > 0 else 0.5
     nmask = (train["label"] == 0).values
     ref_mean = tr.loc[nmask, top].mean().tolist()
     ref_std = (tr.loc[nmask, top].std() + 1e-9).tolist()
-    save_obj({"meta": meta, "s_min": s_min, "s_max": s_max,
+    if not chrono: save_obj({"meta": meta, "s_min": s_min, "s_max": s_max,
               "classes": classes, "normal_idx": n_idx,
               "threshold": thr, "features": top, "ref_mean": ref_mean, "ref_std": ref_std}, RL_PATH)
 
@@ -136,13 +141,13 @@ def main(path, top_n):
         "auc": round(roc_auc_score(y, score), 4) if len(set(y)) > 1 else None,
         "features_used": top,
         "suspicious_result": suspicious,
-        "split": "stratified 60/20/20, seed 42; scaler/selection/models fit on train, fusion on val, metrics on test",
+        "split": ("chronological 60/20/20 in file order" if chrono else "stratified 60/20/20, seed 42") + "; scaler/selection/models fit on train, fusion and threshold on val, metrics on test",
     }
-    with open(os.path.join(REPORTS, "metrics.json"), "w") as f:
+    with open(os.path.join(REPORTS, f"metrics{sfx}.json"), "w") as f:
         json.dump(metrics, f, indent=2)
     warn = ("\n> WARNING: result looks too good (F1>=0.99, zero FPR, or <30 test attacks). "
             "Check for duplicates/leakage before quoting it.\n") if suspicious else ""
-    md = f"""# Evaluation (held-out test split)
+    md = f"""# Evaluation ({"chronological" if chrono else "random stratified"} held-out test split)
 
 **Headline: attack-class F1 = {f1:.2f} (95% bootstrap CI {lo:.2f} to {hi:.2f})**
 Quote the lower bound ({lo:.2f}) if you need one number.
@@ -159,11 +164,12 @@ Quote the lower bound ({lo:.2f}) if you need one number.
 Not claimed: zero false positives, near-perfect accuracy, or performance on traffic from other networks.
 Single dataset, single seed; benchmark flows are not live traffic.
 """
-    open(os.path.join(REPORTS, "EVAL.md"), "w").write(md)
+    open(os.path.join(REPORTS, f"EVAL{sfx}.md"), "w").write(md)
     print(md)
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("csv"); ap.add_argument("--top-n", type=int, default=15)
+    ap.add_argument("--chrono", action="store_true", help="time-ordered split; does not overwrite models")
     a = ap.parse_args()
-    main(a.csv, a.top_n)
+    main(a.csv, a.top_n, a.chrono)

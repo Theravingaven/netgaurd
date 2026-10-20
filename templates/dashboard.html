@@ -21,7 +21,7 @@ td{padding:6px;border-bottom:1px solid #1d232a}tr.r{cursor:pointer}tr.r:hover{ba
 <script>
 let rows=[];const $=id=>document.getElementById(id);
 fetch('/metrics').then(r=>r.json()).then(m=>{if(m.error){$('m').textContent='no metrics: run train.py';return}
-const h=m.headline;$('m').innerHTML=`<div class="big">${h.value.toFixed(2)}</div>${h.metric}, 95% CI ${h.ci95[0].toFixed(2)} to ${h.ci95[1].toFixed(2)}`+
+const h=m.headline;$('m').innerHTML=`<div class="big">${h.value.toFixed(2)}</div>${m.random_split?'time-ordered ':''}${h.metric}, 95% CI ${h.ci95[0].toFixed(2)} to ${h.ci95[1].toFixed(2)}`+
 (m.suspicious_result?'<div class="A">result looks too good; check for leakage</div>':'')});
 function draw(){const o=$('only').checked;$('t').innerHTML=rows.filter(r=>!o||r.verdict=='ANOMALY').map(r=>
 `<tr class="r" onclick="why(${r.i})"><td class="n">${r.i}</td><td class="${r.verdict=='ANOMALY'?'A':'N'}">${r.verdict}</td><td>${r.attack_type}</td><td class="n">${(r.confidence*100).toFixed(0)}%</td><td class="n">${r.anomaly_score}</td></tr>`).join('')}
